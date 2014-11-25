@@ -35,6 +35,6 @@ function [f,g] = logistic_regression(theta, X,y)
 	end
   end
   
-  % Turns out this unvectorized version took 1 hour to run on my laptop.
+  % This unvectorized version took 1 hour to run on my laptop.
 
 end % of the whole function

@@ -32,4 +32,6 @@ function [f,g] = linear_regression(theta, X,y)
 	end
   end
 
+  % This vectorized version took 2 sec to run on my laptop.
+
 end % of the whole function
