@@ -22,3 +22,19 @@ function [f,g] = logistic_regression(theta, X,y)
   %        up the gradients (df/dtheta) for each example. Store the result in 'g'.
   %
 %%% YOUR CODE HERE %%%
+
+  n=size(X,1);
+  for j=1:m  % m = nr of samples
+    % For each sample, compute the predictor h_theta(x) i.e. p.hat
+	h_j = 1/(1+exp(-theta'*X(:,j)));
+    % For each sample, add its contribution to the penalty function f=J(theta)
+    f = f - (y(j)*log(h_j) + (1-y(j))*log(1-h_j));
+	for i=1:n  % n = nr of parameters
+	  % For each parameter, add this sample's contribution to its gradient g=J'(theta)
+	  g(i) = g(i) + X(i,j)*(h_j - y(j));
+	end
+  end
+  
+  % Turns out this unvectorized version took 1 hour to run on my laptop.
+
+end % of the whole function
