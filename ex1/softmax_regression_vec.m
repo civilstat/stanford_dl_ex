@@ -67,11 +67,12 @@ function [f,g] = softmax_regression(theta, X,y)
   % and make gradient a vector for minFunc
   g=g(:);
 
-  % This vectorized version took 90 sec to run on my laptop
+  % This vectorized version took 80 sec to run on my laptop
   % and did not converge but ran the full 200 iterations
   % though seemed to get good performance
   % (around 90%-95% classification accuracy on both train and test)
-  % ...though when I let it run longer, it does converge in ~950 iters,
-  % but with about the same train and test performance.
+  % ...though when I let it run longer,
+  % it does converge in ~950 iters or 400 sec,
+  % but with about the same train and test performance as the shorter run.
 
 end
