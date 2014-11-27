@@ -21,6 +21,7 @@ nrLayers = numel(ei.layer_sizes) + 1;
 stackDepth = nrLayers - 1;
 a = cell(nrLayers, 1); % 1st layer is data, last is output (unnormalized)
 gradStack = cell(stackDepth, 1);
+nrSamples = size(data, 2);
 
 %% forward prop
 %%% YOUR CODE HERE %%%
@@ -32,7 +33,7 @@ gradStack = cell(stackDepth, 1);
 %
 a{1} = data; % a(1)=X;
 for l = 2:nrLayers
-  % z = W*a + b, for each sample,
+  % z(l) = [W*a + b](l-1), for each sample,
   % where b is col.vector with same nr rows as W
   z = bsxfun(@plus, stack{l-1}.W*a{l-1}, stack{l-1}.b);
   a{l} = f(z);
@@ -61,7 +62,7 @@ end;
 % Find linear equivalents of matrix indices (i,j)
 % where, in j'th sample (column), i=y(j)
 % i.e. the row ID is the class of that column
-IDs = sub2ind(size(pred_prob), labels, 1:length(labels));
+IDs = sub2ind(size(pred_prob), labels, (1:length(labels))');
 % Compute binary matrix where IDs are 1 and rest are 0
 y_matrix = zeros(size(pred_prob));
 y_matrix(IDs) = 1;
@@ -77,16 +78,40 @@ cost = -sum(log(pred_prob(IDs)));
 % (so 1st element of deltaStack will just stay empty)
 deltaStack = cell(nrLayers, 1);
 % The last layer's delta vector is just the residuals,
-% apparently summed over samples? Double-check this...
-% It does sound like we want one delta per output unit;
-% but from softmax example, it seems like we should be
-% multiplying the residuals by X or by a(depth-1) before summing...
-deltaStack{nrLayers} = sum(pred_prob - y_matrix, 2);
+% NOT summed over samples like the tutorial mistakenly says.
+% We want one delta per output unit AND per sample.
+deltaStack{nrLayers} = pred_prob - y_matrix;
+
+% Backpropagate to get deltas for previous layers
+for l=((nrLayers-1):-1:2)
+  % delta{l} = [W{l}' * delta{l+1}] .* [deriv of f wrt z{l}]
+  % TODO: if generalizing to different function f,
+  % replace the last product a.*(1-a) with the appropriate derivative of f at z
+  deltaStack{l} = (stack{l}.W'*deltaStack{l+1}) .* (a{l}.*(1-a{l}));
+end
+
+% Compute gradient (avg of contributions of each sample)
+%   at each layer, for W and b
+%   (still WITHOUT the L2 penalty on the weights)
+for l=1:stackDepth
+  % Grad of W{l}(i,j) is matrix of means of delta{l+1}(i)*a{l}(j) across samples
+  gradStack{l}.W = deltaStack{l+1} * a{l}' ./ nrSamples; %'
+  % For grad of b, take mean within rows of delta{l+1} i.e. across samples
+  gradStack{l}.b = mean(deltaStack{l+1}, 2);
+end
 
 
-
-%% compute weight penalty cost and gradient for non-bias terms
+%% compute L2 weight penalty cost and gradient for non-bias terms
 %%% YOUR CODE HERE %%%
+if ei.lambda ~= 0
+  % For each layer with weights W in it...
+  for l=1:stackDepth
+    % Add to the cost: sum of squared weights multiplied by lambda/2
+    cost = cost + (ei.lambda/2)*sum(sum(stack{l}.W .^ 2));
+	% Add to the gradient: weight times lambda
+	gradStack{l}.W = gradStack{l}.W + ei.lambda.*stack{l}.W;
+  end
+end
 
 
 %% reshape gradients into vector
@@ -102,6 +127,7 @@ function h=f(z)
   h = logsig(z);
 end
 % The derivative of sigmoid f is f*(1-f)
+% (although we don't use this, since we store a=f(z) already)
 function h=fPrime(z)
   g = f(z);
   h = f(z).*(1-f(z));
