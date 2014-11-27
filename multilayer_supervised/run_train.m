@@ -39,7 +39,7 @@ params = stack2params(stack);
 %% setup minfunc options
 options = [];
 options.display = 'iter';
-options.maxFunEvals = 1e6;
+options.maxFunEvals = 1e6;  % just do a few iters for testing, else set to 1e6
 options.Method = 'lbfgs';
 
 %% run training
