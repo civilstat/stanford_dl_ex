@@ -34,14 +34,26 @@ ei.lambda = 0;
 % which type of activation function to use in hidden layers
 % feel free to implement support for only the logistic sigmoid function
 ei.activation_fun = 'logistic';
+% Whether output is categorical (each sample's y is in 1:k if there are k categories)
+% or continuous (each sample's y is a vector in (0,1) range)
+ei.output_type = 'categorical';
 
 %% setup random initial weights
 stack = initialize_weights(ei);
 params = stack2params(stack);
 
 
-
 % Check that the programmed gradient is similar to the numerical estimate:
 % The "err" column should be near 0, basically just rounding error
 grad_check(@supervised_dnn_cost, params, 10, ei, data_train, labels_train)
 
+
+
+% also try checking if modified function works for squared error loss for autoencoder
+ei.output_type = 'continuous';
+ei.output_dim = ei.input_dim;
+ei.layer_sizes = [256, ei.output_dim];
+stack = initialize_weights(ei);
+params = stack2params(stack);
+grad_check(@supervised_dnn_cost, params, 10, ei, data_train, data_train)
+% yes! it seems to work :)
