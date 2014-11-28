@@ -36,21 +36,28 @@ for l = 2:nrLayers
   % z(l) = [W*a + b](l-1), for each sample,
   % where b is col.vector with same nr rows as W
   z = bsxfun(@plus, stack{l-1}.W*a{l-1}, stack{l-1}.b);
-  if l == nrLayers
-    a{l} = exp(z); % for last layer don't do full sigmoid, just exp, to calculate softmax below in pred_prob?
+  if l == nrLayers && strcmp(ei.output_type, 'categorical')
+    % If classifying into categories, then for last layer,
+    % don't do full sigmoid, just exp, to calculate softmax below in pred_prob
+	a{l} = exp(z);
   else
-    a{l} = f(z); % for other layers DO calculate sigmoid?
+    % For other layers, or for continuous output, DO calculate sigmoid
+    a{l} = f(z);
   end
 end
-% Normalize final layer, so each sample's outputs sum to 1,
+
+% IF categorical,
+% normalize final layer, so each sample's outputs sum to 1,
 % so that they are actual prediction probabilities.
 % Final layer outputs are in a, with nrClasses rows and nrSamples cols,
 % so we need something like (a ./ sum(a,1)), arranged right...
-pred_prob = bsxfun(@rdivide, a{nrLayers}, sum(a{nrLayers},1));
-% So far, this is not strictly necessary,
-% since we'll just use the highest value's index as the prediction...
-% but we'll need the normalization anyway
-% for computing the loss function later.
+% but IF continuous, just use a{nrLayers} as the prediction.
+switch ei.output_type
+  case 'categorical'
+    pred_prob = bsxfun(@rdivide, a{nrLayers}, sum(a{nrLayers},1));
+  case 'continuous'
+    pred_prob = a{nrLayers};
+end
 
 %% return here if only predictions desired.
 if po
@@ -63,16 +70,21 @@ end;
 %% compute cost
 %%% YOUR CODE HERE %%%
 
-% Find linear equivalents of matrix indices (i,j)
-% where, in j'th sample (column), i=y(j)
-% i.e. the row ID is the class of that column
-IDs = sub2ind(size(pred_prob), labels', 1:nrSamples);
-% Compute binary matrix where IDs are 1 and rest are 0
-y_matrix = zeros(size(pred_prob));
-y_matrix(IDs) = 1;
+switch ei.output_type
+  case 'categorical'
+	% Find linear equivalents of matrix indices (i,j)
+	% where, in j'th sample (column), i=y(j)
+	% i.e. the row ID is the class of that column
+	IDs = sub2ind(size(pred_prob), labels', 1:nrSamples);
+	% Compute binary matrix where IDs are 1 and rest are 0
+	y_matrix = zeros(size(pred_prob));
+	y_matrix(IDs) = 1;
+	% Cost function f=J(theta), NOT yet including L2 penalty on the weights
+	cost = -sum(log(pred_prob(IDs)));
+  case 'continuous' % use squared error loss, but DON'T divide by NrSamples
+    cost = .5 .* sum(sum((pred_prob - labels).^2));
+end
 
-% Cost function f=J(theta), NOT yet including L2 penalty on the weights
-cost = -sum(log(pred_prob(IDs)));
 
 
 %% compute gradients using backpropagation
@@ -84,7 +96,13 @@ deltaStack = cell(nrLayers, 1);
 % The last layer's delta vector is just the residuals,
 % NOT summed over samples like the tutorial mistakenly says.
 % We want one delta per output unit AND per sample.
-deltaStack{nrLayers} = pred_prob - y_matrix;
+switch ei.output_type
+  case 'categorical'
+    deltaStack{nrLayers} = pred_prob - y_matrix;
+  case 'continuous'
+    deltaStack{nrLayers} = (pred_prob - labels) .* (a{nrLayers}.*(1-a{nrLayers}));
+end
+
 
 % Backpropagate to get deltas for previous layers
 for l=((nrLayers-1):-1:2)
@@ -99,9 +117,10 @@ end
 %   (still WITHOUT the L2 penalty on the weights)
 % NOTE: Take SUMS not MEANS since our loss function is a sum not a mean
 % (unlike sq.err. loss example in tutorial)
+% ...and for simplicity, let's also do sums not means for the sq.err. loss too with continuous outputs
 for l=1:stackDepth
   % Grad of W{l}(i,j) is matrix of sums of delta{l+1}(i)*a{l}(j) across samples
-  gradStack{l}.W = deltaStack{l+1} * a{l}'; %' % why doesn't it recognize the 1st ' as transpose?
+  gradStack{l}.W = deltaStack{l+1} * a{l}'; %' % Notepad++ doesn't recognize the 1st ' as transpose
   % For grad of b, take sum within rows of delta{l+1} i.e. across samples
   gradStack{l}.b = sum(deltaStack{l+1}, 2);
 end
