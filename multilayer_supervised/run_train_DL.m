@@ -207,7 +207,7 @@ for nrHiddenLayers = NrsOfHiddenLayers
 	% Possibly, eventually add SUPERVISED pretraining here at the end for comparison
 	
 	% Save as we go
-	save('Outcomes_28Nov2014.mat', Outcomes);
+	save('Outcomes_28Nov2014.mat', 'Outcomes');
 	
   end
 end
