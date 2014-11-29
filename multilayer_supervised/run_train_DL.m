@@ -1,26 +1,36 @@
 % Train multilayer neural networks on MNIST data
 % with various network architectures, with and without pre-training,
 % modifying:
-% - number of hidden layers (1:5?)
-% - number of hidden units per layer (7^2, 10^2, 13^2, 16^2 ?)
+% - number of hidden layers (1:4)
+% - number of hidden units per layer (8^2, 10^2, 16^2, 28^2)
 % - whether pretraining is supervised or unsupervised
-% and showing:
+% and saving the results:
+% - training and testing accuracies
+% - weights at each layer of the neural network
+% so we can investigate:
 % - whose final training and/or test error is lower
 % - what the maximal-activation inputs look like for all sets of units
 
+% So we have 3 experimental factors to manipulate
+% (UnsupPretrain vs NoPretrain; NrsOfHiddenLayers; LayerSizes)
+% for a total of 2x4x4 = 32 combinations.
+% Ideally we should do several simulation runs at each combination of the factors,
+% but it is so slow that right now I am only doing one simulation run for each setting.
+
 % To match the paper exactly, we ought to use denoising autoencoders,
 % with a different cost function than sq.err.loss,
-% and with what seems to be dropout noise?...
-% but I hope that what we have will be good enough for starters.
+% and with what seems to be dropout noise on the X's?...
+% but that would all require substantial modification,
+% so I hope that what we have will be good enough for now.
 
 % Also, the paper mentions "the number of ... passes through the data (epochs) is 50 ... per layer"
-% so are they stopping the gradient descent after 50 iters? Or does that mean something else?
-% For the sake of runtime I will stop mine after 200 iters,
-% which is usually enough for the one-layer 256-unit supervised model...
-% but maybe I should revisit this.
-% ...
-% Googling suggests that an "epoch" is indeed what I think of as an iteration,
-% so we can cut it down to 50 iterations and call it good.
+% so are they stopping the gradient descent after 50 iterations?
+% Googling suggests that an "epoch" is indeed what I think of as an iteration.
+% For the sake of runtime I will stop mine after 50 iters,
+% since otherwise it will take forever to run anything,
+% but in that case we should note that our simulation results use "early stopping".
+
+
 
 %%% SETUP THE ENVIRONMENT / EXPERIMENT INFO %%%
 
@@ -29,21 +39,16 @@ NrsOfHiddenLayers = 1:4; % for nrHiddenLayers in this set...
 LayerSizes = [8 10 16 28].^2; % for layerSize in this set...
 Outcomes.NoPretrain = cell(length(NrsOfHiddenLayers), length(LayerSizes));
 Outcomes.UnsupPretrain = cell(length(NrsOfHiddenLayers), length(LayerSizes));
-% Here we'll store:
+% In the Outcomes object, we'll store the following info
+% (where <Whether> is either No or Unsup):
 %   outcomes.<Whether>Pretrain{nrHiddenLayers,layerSize}.trainAcc,
 %   outcomes.<Whether>Pretrain{nrHiddenLayers,layerSize}.testAcc,
 %   outcomes.<Whether>Pretrain{nrHiddenLayers,layerSize}.optStack,
 %   outcomes.UnsupPretrain{nrHiddenLayers,layerSize}.autoencoderStack
-% so that we can plot the train and test accs,
+% so that we can plot the train and test accuracies,
 % and we can display the Weight heatmaps for the optStacks
 % (and compare them to before and after the supervised 'post-training')
 
-% Consider restructuring this so that we have a dataframe-like matrix:
-% columns are WhetherPretrained, NrHiddenLayers, LayerSize, TrainOrTest, Accuracy
-% so that we can make line plots of Accuracy vs NrHiddenLayers or vs LayerSize
-% with separate lines for WhetherPretrained and TrainOrTest
-% or maybe have TrainAcc and TestAcc as the x-vs-y axes?
-% It's just a thought -- we can do that later.
 
 
 % add common directory to your path for
@@ -57,19 +62,24 @@ addpath(genpath('../common/minFunc_2012/minFunc'));
 %% setup minfunc options
 options = [];
 options.display = 'iter';
-options.maxFunEvals = 50;  % Erhan et al. paper seems to stop after 50 iters
+options.maxFunEvals = 50;  % Erhan et al. paper seems to stop after 50 iters per layer
 options.Method = 'lbfgs';
 
 % a struct containing network layer sizes etc
 ei = [];
 %% populate ei with the network architecture to train:
 % dimension of input features
-ei.input_dim = 784;
-% scaling parameter for l2 weight regularization penalty
+ei.input_dim = 784;  % input images are always 28x28 pixels
+% scaling parameter for L2 weight regularization penalty
 ei.lambda = 0;
 % which type of activation function to use in hidden layers
-% feel free to implement support for only the logistic sigmoid function
+% (currently we've implemented support for only the logistic sigmoid function)
 ei.activation_fun = 'logistic';
+% For each run of the experiment, we'll also need to specify
+% ei.output_dim, ei.layer_sizes, and ei.output_type;
+% please see examples below.
+% We'll also need the fully-specified ei for each run
+% to compute the predictions for getting the accuracy of each model.
 
 
 
@@ -94,8 +104,8 @@ for nrHiddenLayers = NrsOfHiddenLayers
 	stackInit = initialize_weights(eiSup);
 	paramsInit = stack2params(stackInit);
 	
-	% Copy the above stack for the full autoencoder stack,
-	% redoing the above weight-initialization just to get the top layer of correct size
+	% Copy the above randomly-initialized weights stack for the full autoencoder,
+	% redoing the weight-initialization just to get a top layer of the correct size
 	% and saving that new top layer in the initial params for the autoencoder
 	eiUnsupPretrain = ei;
 	eiUnsupPretrain.output_dim = eiUnsupPretrain.input_dim;
@@ -105,12 +115,14 @@ for nrHiddenLayers = NrsOfHiddenLayers
 	stackInitAutoencoder = stackInit;
 	stackInitAutoencoder{nrHiddenLayers+1} = stackTemp{nrHiddenLayers+1};
 	paramsInitAutoencoder = stack2params(stackInitAutoencoder);
-	stackTrainedAutoencoder = stackInit; % placeholder for the trained weights
-	
-	% Now both the pre-trained and non-pre-trained have the same init values where possible,
+		
+	% So, both the pre-trained and non-pre-trained have the same init values where possible,
 	% to make their outputs more comparable.
 	
-    % FIRST, WITHOUT PRETRAINING
+    % Also create a placeholder for where the pretrained weights will be stored
+	stackTrainedAutoencoder = stackInit;
+
+	% FIRST, TRAIN THE SUPERVISED MODEL WITHOUT ANY PRETRAINING
 	disp(['FIRST, WITHOUT PRETRAINING: nrHiddenLayers=', num2str(nrHiddenLayers), ...
 	     ', layerSize=', num2str(layerSize)])
 	%% run training
@@ -133,7 +145,7 @@ for nrHiddenLayers = NrsOfHiddenLayers
 	Outcomes.NoPretrain{nrHiddenLayers, layerSizeID}.optStack = params2stack(opt_params, eiSup);
 
 	
-	% SECOND, WITH UNSUPERVISED PRETRAINING
+	% SECOND, RUN UNSUPERVISED PRETRAINING AND THEN REFIT THE MODEL
 	disp(['SECOND, WITH UNSUPERVISED PRETRAINING: nrHiddenLayers=', num2str(nrHiddenLayers), ...
 	     ', layerSize=', num2str(layerSize)])
 	disp('Pretrain with unsupervised autoencoder')
@@ -171,19 +183,22 @@ for nrHiddenLayers = NrsOfHiddenLayers
 			stackTemp = params2stack(opt_params, eiLayer);
 			stackTrainedAutoencoder{layer} = stackTemp{1};
 			% compute new predictions, using prev layer's predictions as inputs
-			predLayer = logsig(bsxfun(@plus, stackTrainedAutoencoder{layer}.W*predLayer, stackTrainedAutoencoder{layer}.b));
+			predLayer = logsig(bsxfun(@plus, stackTrainedAutoencoder{layer}.W*predLayer, ...
+				stackTrainedAutoencoder{layer}.b));
 		end
 	end
 	
 	% Should there be an extra step, of training just a mini-model,
 	% from the last hidden layer to the real labels?
-	% (That would just be a simple softmax regression.)
+	% (That would just be a simple softmax regression, right?)
 	% Or is it OK to revert back to the full model without pretraining those weights too?
 	% Let's skip doing the final supervised layer separately, and just do it all together.
 
-	% Now we have trained each layer of stackTrainedAutoencoder except the last,
-	% so we can feed them all together into one full supervised multilayer network:
-	% Revert to supervised setup with these stackTrainedAutoencoder params as initial weights, and retrain
+	% So, by now we have trained each layer of stackTrainedAutoencoder
+	% (except the last, i.e. the supervised layer whose outputs are the labels).
+	% We can feed them all together into one full supervised multilayer network:
+	% Revert to supervised setup with these stackTrainedAutoencoder params as initial weights,
+	% and retrain the full model at once (not greedily layer-by-layer)
 	disp('Train supervised model starting with previously-found weights')
 	paramsTrainedAutoencoder = stack2params(stackTrainedAutoencoder);
 	tic
@@ -204,10 +219,11 @@ for nrHiddenLayers = NrsOfHiddenLayers
 	Outcomes.UnsupPretrain{nrHiddenLayers, layerSizeID}.optStack = params2stack(opt_params, eiSup);	
 	
 	
-	% Possibly, eventually add SUPERVISED pretraining here at the end for comparison
+	% We could also add SUPERVISED pretraining here at the end,
+	% for comparison with NO and SUPERVISED pretraining.
 	
-	% Save as we go
-	save('Outcomes_28Nov2014.mat', 'Outcomes');
+	% Save the outputs as we go
+	save(['Outcomes_' date '.mat'], 'Outcomes');
 	
   end
 end

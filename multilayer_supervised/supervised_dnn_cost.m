@@ -139,7 +139,7 @@ if ei.lambda ~= 0
 end
 
 
-%% reshape gradients into vector
+%% reshape gradients into vector, so gradient search can optimize them all at once
 [grad] = stack2params(gradStack);
 end
 
@@ -150,10 +150,4 @@ end
 % We can apply it element-wise.
 function h=f(z)
   h = logsig(z);
-end
-% The derivative of sigmoid f is f*(1-f)
-% (although we don't use this, since we store a=f(z) already)
-function h=fPrime(z)
-  g = f(z);
-  h = f(z).*(1-f(z));
 end
