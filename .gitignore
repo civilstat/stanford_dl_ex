@@ -2,3 +2,4 @@ common/t10k-images-idx3-ubyte
 common/t10k-labels-idx1-ubyte
 common/train-images-idx3-ubyte
 common/train-labels-idx1-ubyte
+multilayer_supervised/Outcomes_28Nov2014.mat
